@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今日の運勢 おみくじ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', 'Georgia', serif; }
+
+  @keyframes slideDown {
+    from { transform: translateY(-120%) rotate(-5deg); opacity: 0; }
+    to   { transform: translateY(0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes shake-omikuji {
+    0%,100% { transform: rotate(0deg); }
+    20%  { transform: rotate(-8deg); }
+    40%  { transform: rotate(8deg); }
+    60%  { transform: rotate(-5deg); }
+    80%  { transform: rotate(5deg); }
+  }
+  @keyframes unfold {
+    from { max-height: 0; opacity: 0; }
+    to   { max-height: 600px; opacity: 1; }
+  }
+  .slide-down { animation: slideDown 0.6s cubic-bezier(.22,.61,.36,1) forwards; }
+  .shake-box { animation: shake-omikuji 0.5s ease; }
+  .unfold { animation: unfold 0.8s ease forwards; overflow: hidden; }
+
+  .fortune-scroll {
+    background: linear-gradient(180deg, #fef3c7 0%, #fffbeb 40%, #fef3c7 100%);
+    border: 2px solid #d97706;
+    position: relative;
+  }
+  .fortune-scroll::before, .fortune-scroll::after {
+    content: '';
+    display: block;
+    height: 16px;
+    background: linear-gradient(90deg, #b45309, #d97706, #b45309);
+    border-radius: 4px;
+  }
+
+  .dai-kichi  { color: #dc2626; }
+  .kichi      { color: #ea580c; }
+  .chu-kichi  { color: #ca8a04; }
+  .sho-kichi  { color: #16a34a; }
+  .sue-kichi  { color: #2563eb; }
+  .kyo        { color: #7c3aed; }
+
+  .calendar-day {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; border-radius: 4px; cursor: default;
+  }
+</style>
+</head>
+<body class="bg-red-50 min-h-screen flex flex-col items-center py-6 px-4">
+
+<h1 class="text-2xl font-black text-red-800 mb-1 tracking-widest">今日の運勢</h1>
+<p class="text-sm text-red-500 mb-6" id="todayLabel"></p>
+
+<!-- Omikuji box -->
+<div id="omikujiBox" class="relative cursor-pointer select-none" aria-label="おみくじを引く" role="button" tabindex="0">
+  <div id="boxBody" class="w-28 h-36 bg-gradient-to-b from-red-700 to-red-900 rounded-lg shadow-2xl flex flex-col items-center justify-center border-4 border-yellow-400">
+    <div class="text-yellow-300 text-4xl">🏮</div>
+    <p class="text-yellow-200 text-xs mt-2 font-bold">クリックして引く</p>
+  </div>
+</div>
+
+<!-- Result area -->
+<div id="resultArea" class="hidden mt-6 w-full max-w-sm">
+  <div class="fortune-scroll rounded-xl shadow-xl p-4 slide-down">
+    <div class="text-center py-4">
+      <p class="text-xs text-amber-700 tracking-widest mb-1">本日の運勢</p>
+      <p id="fortuneTitle" class="text-5xl font-black tracking-widest my-2"></p>
+      <p id="fortuneReading" class="text-xs text-amber-600"></p>
+    </div>
+    <div id="fortuneItems" class="unfold mt-2 space-y-2"></div>
+  </div>
+  <button id="shareBtn" class="mt-4 w-full bg-red-700 hover:bg-red-800 text-white py-2 rounded-lg font-bold text-sm" tabindex="0">
+    結果をコピー
+  </button>
+</div>
+
+<!-- Calendar -->
+<div class="mt-8 w-full max-w-sm">
+  <h2 class="text-sm font-bold text-red-800 mb-2">おみくじ履歴</h2>
+  <div id="calendarArea" class="bg-white rounded-xl p-3 shadow"></div>
+</div>
+
+<script>
+(() => {
+  // ── Fortune definitions ──
+  const FORTUNES = [
+    { id: 'dai-kichi', label: '大吉', reading: 'だいきち', weight: 5,
+      items: {
+        wish: '強く願えば必ず叶います。自信を持って行動してください。',
+        love: '理想の出会いが訪れます。素直な気持ちを伝えましょう。',
+        study: '集中力が高まり、目標を達成できます。今が学びの好機。',
+        health: '活力にあふれ、充実した毎日が送れます。',
+        work: '大きなチャンスが舞い込みます。積極的に挑戦を。',
+      }
+    },
+    { id: 'kichi', label: '吉', reading: 'きち', weight: 20,
+      items: {
+        wish: '着実に前進しています。焦らず続ければ実ります。',
+        love: '穏やかな関係が続きます。日常の小さな幸せを大切に。',
+        study: '努力が実を結びます。コツコツ積み上げましょう。',
+        health: '安定しています。適度な休養を忘れずに。',
+        work: '着実な成果が得られます。誠実な姿勢が評価されます。',
+      }
+    },
+    { id: 'chu-kichi', label: '中吉', reading: 'ちゅうきち', weight: 20,
+      items: {
+        wish: 'もう少しで叶います。粘り強く続けることが大切です。',
+        love: 'お互いを理解しようとする姿勢が大事。聞き上手になりましょう。',
+        study: '少し時間がかかりますが、確実に力がついています。',
+        health: '少し疲れ気味かも。バランスの良い食事と睡眠を。',
+        work: '地道な努力が後で花開きます。今は準備の時期。',
+      }
+    },
+    { id: 'sho-kichi', label: '小吉', reading: 'しょうきち', weight: 20,
+      items: {
+        wish: '小さな喜びを積み重ねましょう。小さな幸せが大きな幸福になります。',
+        love: '今は自分磨きの時。相手への思いやりを大切に。',
+        study: '基礎を固める時期。焦らず丁寧に取り組みましょう。',
+        health: '無理をせず、自分のペースを守ることが大切。',
+        work: '小さなことを丁寧にこなすと信頼が高まります。',
+      }
+    },
+    { id: 'sue-kichi', label: '末吉', reading: 'すえきち', weight: 20,
+      items: {
+        wish: '今は種まきの時。将来への準備を着実に進めましょう。',
+        love: '急がず、自然な流れに任せましょう。縁は必ずやってきます。',
+        study: '今の努力は後で必ず実ります。基礎を大切にして。',
+        health: '日々の生活習慣を見直してみましょう。',
+        work: '今は準備期間。謙虚に学ぶ姿勢が未来を開きます。',
+      }
+    },
+    { id: 'kyo', label: '凶', reading: 'きょう', weight: 15,
+      items: {
+        wish: '今は焦らず待つ時。望みは先にあります。',
+        love: '思い込みを手放すと新しい縁が開けます。',
+        study: '集中しにくい時期。環境を整えることから始めて。',
+        health: '体のサインを見逃さずに。無理は禁物。',
+        work: '慎重に進めましょう。失敗を恐れず、学びに変えて。',
+      }
+    },
+  ];
+
+  const ITEM_LABELS = [
+    { key: 'wish',   label: '願い事', emoji: '⭐' },
+    { key: 'love',   label: '恋愛',   emoji: '💕' },
+    { key: 'study',  label: '学業',   emoji: '📚' },
+    { key: 'health', label: '健康',   emoji: '🌿' },
+    { key: 'work',   label: '仕事',   emoji: '💼' },
+  ];
+
+  const STORAGE_KEY = 'omikuji_history';
+
+  // ── Seeded random ──
+  function dateKey(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function hashStr(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
+    return h >>> 0;
+  }
+  function seededRand(seed) {
+    let s = seed;
+    return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0x100000000; };
+  }
+  function getDailyFortune(dateStr) {
+    const seed = hashStr(dateStr);
+    const rng = seededRand(seed);
+    const total = FORTUNES.reduce((a, f) => a + f.weight, 0);
+    let r = rng() * total;
+    for (const f of FORTUNES) { r -= f.weight; if (r <= 0) return f; }
+    return FORTUNES[0];
+  }
+
+  // ── State ──
+  const today = new Date();
+  const todayKey = dateKey(today);
+  let history = {};
+  try { history = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {}
+
+  document.getElementById('todayLabel').textContent =
+    `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日`;
+
+  // ── Render result ──
+  function showResult(fortune, animate) {
+    const resultArea = document.getElementById('resultArea');
+    const title = document.getElementById('fortuneTitle');
+    const reading = document.getElementById('fortuneReading');
+    const items = document.getElementById('fortuneItems');
+
+    title.textContent = fortune.label;
+    title.className = `text-5xl font-black tracking-widest my-2 ${fortune.id.replace('-','-')}`;
+    title.classList.add(fortune.id);
+    reading.textContent = `（${fortune.reading}）`;
+
+    items.innerHTML = '';
+    ITEM_LABELS.forEach(({ key, label, emoji }) => {
+      const row = document.createElement('div');
+      row.className = 'flex gap-2 items-start text-sm';
+      const tag = document.createElement('span');
+      tag.className = 'font-bold text-amber-800 whitespace-nowrap w-16 flex-shrink-0';
+      tag.textContent = emoji + ' ' + label;
+      const msg = document.createElement('span');
+      msg.className = 'text-amber-900';
+      msg.textContent = fortune.items[key];
+      row.appendChild(tag);
+      row.appendChild(msg);
+      items.appendChild(row);
+    });
+
+    resultArea.classList.remove('hidden');
+    if (animate) {
+      resultArea.querySelector('.fortune-scroll').classList.remove('slide-down');
+      void resultArea.querySelector('.fortune-scroll').offsetWidth;
+      resultArea.querySelector('.fortune-scroll').classList.add('slide-down');
+    }
+  }
+
+  // ── Draw ──
+  let drawn = false;
+  function draw() {
+    if (drawn) return;
+    drawn = true;
+    const box = document.getElementById('boxBody');
+    box.classList.add('shake-box');
+    setTimeout(() => {
+      box.classList.remove('shake-box');
+      const fortune = getDailyFortune(todayKey);
+      history[todayKey] = fortune.id;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+      showResult(fortune, true);
+      renderCalendar();
+    }, 550);
+  }
+
+  const box = document.getElementById('omikujiBox');
+  box.addEventListener('click', draw);
+  box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); draw(); } });
+
+  // ── Share ──
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const fortune = getDailyFortune(todayKey);
+    const lines = [`【今日の運勢】${todayKey}`, `${fortune.label}（${fortune.reading}）`, ''];
+    ITEM_LABELS.forEach(({ key, label, emoji }) => lines.push(`${emoji}${label}: ${fortune.items[key]}`));
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      const btn = document.getElementById('shareBtn');
+      btn.textContent = 'コピーしました！';
+      setTimeout(() => { btn.textContent = '結果をコピー'; }, 1500);
+    }).catch(() => {});
+  });
+
+  // ── Calendar ──
+  const FORTUNE_COLORS = {
+    'dai-kichi': 'bg-red-500 text-white',
+    'kichi':     'bg-orange-400 text-white',
+    'chu-kichi': 'bg-yellow-400 text-gray-800',
+    'sho-kichi': 'bg-green-400 text-white',
+    'sue-kichi': 'bg-blue-400 text-white',
+    'kyo':       'bg-purple-400 text-white',
+  };
+  const FORTUNE_SHORT = {
+    'dai-kichi': '大', 'kichi': '吉', 'chu-kichi': '中',
+    'sho-kichi': '小', 'sue-kichi': '末', 'kyo': '凶'
+  };
+
+  function renderCalendar() {
+    const cal = document.getElementById('calendarArea');
+    cal.innerHTML = '';
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const header = document.createElement('div');
+    header.className = 'text-center text-xs font-bold text-gray-600 mb-2';
+    header.textContent = `${year}年${month+1}月`;
+    cal.appendChild(header);
+
+    const dayNames = ['日','月','火','水','木','金','土'];
+    const dRow = document.createElement('div');
+    dRow.className = 'grid grid-cols-7 gap-0.5 mb-1';
+    dayNames.forEach(d => {
+      const cell = document.createElement('div');
+      cell.className = 'calendar-day text-xs text-gray-400 font-bold';
+      cell.textContent = d;
+      dRow.appendChild(cell);
+    });
+    cal.appendChild(dRow);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-7 gap-0.5';
+    for (let i = 0; i < firstDay; i++) {
+      const blank = document.createElement('div');
+      blank.className = 'calendar-day';
+      grid.appendChild(blank);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = dateKey(new Date(year, month, d));
+      const cell = document.createElement('div');
+      const fId = history[key];
+      if (fId) {
+        cell.className = `calendar-day ${FORTUNE_COLORS[fId] || 'bg-gray-200'} font-bold`;
+        cell.textContent = FORTUNE_SHORT[fId] || '?';
+        cell.title = FORTUNES.find(f => f.id === fId)?.label || '';
+      } else {
+        cell.className = 'calendar-day text-gray-400 text-xs';
+        cell.textContent = d;
+      }
+      if (key === todayKey) cell.classList.add('ring-2', 'ring-red-600');
+      grid.appendChild(cell);
+    }
+    cal.appendChild(grid);
+  }
+
+  // ── Auto-show if already drawn today ──
+  if (history[todayKey]) {
+    drawn = true;
+    const fortune = getDailyFortune(todayKey);
+    showResult(fortune, false);
+    document.getElementById('omikujiBox').style.opacity = '0.5';
+    document.getElementById('omikujiBox').setAttribute('aria-disabled', 'true');
+  }
+  renderCalendar();
+})();
+</script>
+</body>
+</html>
